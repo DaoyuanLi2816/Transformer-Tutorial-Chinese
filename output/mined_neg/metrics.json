@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "bank_size": 77,
+    "train_size": 2000,
+    "test_size": 1000,
+    "pool_size": 8,
+    "mining_protocol": "bootstrap"
+  },
+  "metrics": {
+    "zero_shot": {
+      "map@25": 0.0689,
+      "recall@1": 0.019,
+      "recall@3": 0.06,
+      "recall@5": 0.097,
+      "recall@10": 0.172
+    },
+    "random_negatives": {
+      "map@25": 0.7884,
+      "recall@1": 0.676,
+      "recall@3": 0.878,
+      "recall@5": 0.945,
+      "recall@10": 0.976
+    },
+    "mined_round_1": {
+      "map@25": 0.8381,
+      "recall@1": 0.762,
+      "recall@3": 0.896,
+      "recall@5": 0.933,
+      "recall@10": 0.975
+    },
+    "mined_round_2": {
+      "map@25": 0.8392,
+      "recall@1": 0.757,
+      "recall@3": 0.905,
+      "recall@5": 0.95,
+      "recall@10": 0.979
+    }
+  }
+}

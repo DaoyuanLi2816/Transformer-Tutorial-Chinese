@@ -126,13 +126,15 @@ class BiEncoderRetriever:
                 bnb_4bit_compute_dtype=torch_dtype,
             )
 
+        from ._compat import model_dtype_kwargs
+
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = AutoModel.from_pretrained(
             model_name,
-            torch_dtype=torch_dtype,
             device_map=device_map,
             trust_remote_code=True,
             quantization_config=quantization_config,
+            **model_dtype_kwargs(torch_dtype),
         )
         model.config.use_cache = False
 

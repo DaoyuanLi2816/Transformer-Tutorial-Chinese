@@ -35,12 +35,14 @@ def build_training_rows(
     """Build ChatML training strings from retriever rankings.
 
     For each query: take the top-k candidate texts, force the gold in if the
-    retriever missed it, shuffle, and render the full ChatML example whose
-    assistant turn is the gold letter.
+    retriever missed it, shuffle, and render the ChatML example split at the
+    assistant tag, so the SFT loss (``completion_only_loss``) is computed
+    only over the gold letter.
 
     Returns:
-        List of dicts with ``text`` (the rendered example), ``letter`` (gold
-        letter) and ``gold_index``.
+        List of dicts with ``prompt`` (everything through
+        ``<|im_start|>assistant\n``), ``completion`` (the gold letter +
+        closing tag), ``letter`` (gold letter) and ``gold_index``.
     """
     rng = random.Random(seed)
     rows = []
@@ -48,9 +50,12 @@ def build_training_rows(
         candidates, gold_idx = ensure_gold_in_top_k(list(ranked), gold, k=k, rng=rng)
         letter = string.ascii_uppercase[gold_idx]
         user_text = build_rerank_text(query, candidates, candidate_noun=candidate_noun)
+        full = render_chatml(user_text, answer_letter=letter, system=system)
+        prompt = render_chatml(user_text, answer_letter="", system=system)
         rows.append(
             {
-                "text": render_chatml(user_text, answer_letter=letter, system=system),
+                "prompt": prompt,
+                "completion": full[len(prompt):],
                 "letter": letter,
                 "gold_index": gold_idx,
             }
@@ -84,12 +89,14 @@ class ListwiseReranker:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        from ._compat import model_dtype_kwargs
+
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=getattr(torch, dtype),
             device_map=device_map,
             trust_remote_code=True,
+            **model_dtype_kwargs(getattr(torch, dtype)),
         )
         return cls(model, tokenizer, **kwargs)
 
@@ -135,11 +142,17 @@ class ListwiseReranker:
         lr: float = 1e-4,
         seed: int = 42,
     ):
-        """Completion-only SFT on rows from :func:`build_training_rows`."""
+        """Completion-only SFT on rows from :func:`build_training_rows`.
+
+        Uses a ``prompt``/``completion`` dataset with ``completion_only_loss``
+        instead of ``DataCollatorForCompletionOnlyLM`` + a response-template
+        string match: current trl releases removed that collator, and the
+        dataset-shape-driven path also sidesteps any brittleness from the
+        tokenizer re-merging the ``<|im_start|>assistant\\n`` marker.
+        """
         from datasets import Dataset
         from peft import LoraConfig, get_peft_model
-        from transformers import TrainingArguments
-        from trl import DataCollatorForCompletionOnlyLM, SFTTrainer
+        from trl import SFTConfig, SFTTrainer
 
         if lora is not None:
             lora_config = LoraConfig(
@@ -155,20 +168,18 @@ class ListwiseReranker:
             )
             self.model = get_peft_model(self.model, lora_config)
 
-        dataset = Dataset.from_list([{"text": r["text"]} for r in rows])
-        collator = DataCollatorForCompletionOnlyLM(
-            response_template="<|im_start|>assistant\n",
-            instruction_template="<|im_start|>user\n",
-            tokenizer=self.tokenizer,
+        dataset = Dataset.from_list(
+            [{"prompt": r["prompt"], "completion": r["completion"]} for r in rows]
         )
 
         trainer = SFTTrainer(
             model=self.model,
             processing_class=self.tokenizer,
             train_dataset=dataset,
-            data_collator=collator,
-            args=TrainingArguments(
+            args=SFTConfig(
                 output_dir=output_dir,
+                max_length=max_seq_length,
+                completion_only_loss=True,
                 num_train_epochs=epochs,
                 per_device_train_batch_size=batch_size,
                 gradient_accumulation_steps=gradient_accumulation_steps,
