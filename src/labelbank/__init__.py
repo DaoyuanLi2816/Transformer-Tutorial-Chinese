@@ -21,7 +21,7 @@ from .formatting import (
 from .metrics import apk, mapk, recall_at_k
 from .mining import build_pools, ensure_gold_in_top_k, gold_first_pool
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "LabelBank",

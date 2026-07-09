@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labelbank"
-version = "0.2.0"
+version = "0.2.1"
 description = "Retrieve + rerank over a closed label bank: LLM bi-encoders with self-mined hard negatives and a generative listwise reranker"
 readme = "README.md"
 requires-python = ">=3.9"
