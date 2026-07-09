@@ -6,10 +6,13 @@ Retriever stage (``stage: retriever``)::
     python -m labelbank.run --cfg examples/configs/quickstart.yaml
 
 loads (query, gold_id) pairs and the label bank, evaluates the zero-shot
-backbone, then runs ``mining_rounds`` rounds of: rank the whole bank for
-every training query → build gold-first hard-negative pools → train with the
-no-in-batch-negatives loss → evaluate. Saves the adapter, per-split rankings
-(``rankings.parquet``) and ``metrics.json`` under ``output_dir``.
+backbone, trains one *bootstrap* round on random negatives (mining from the
+untrained embedder collapses retrieval quality — see the README ablation),
+then runs ``mining_rounds`` rounds of: rank the whole bank for every training
+query → build gold-first hard-negative pools from the previous round →
+train with the no-in-batch-negatives loss → evaluate. Saves the adapter,
+per-split rankings (``rankings.parquet``) and ``metrics.json`` under
+``output_dir``.
 
 Rounds continue training the same adapter. The competition ran each round as
 a separate script invocation with a fresh adapter; for that protocol see
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
@@ -201,6 +205,35 @@ def run_retriever(cfg: RunConfig) -> dict:
 
     train_queries = train_df["query"].tolist()
     train_golds = train_df["gold_id"].tolist()
+
+    # Bootstrap round: one epoch on *random* negatives before the first
+    # mining round. Mining round 1 straight from the zero-shot model's
+    # rankings collapses retrieval quality (MAP 0.43 vs 0.80 for random
+    # negatives on banking77 — see examples/mined_negatives_experiment.py
+    # --cold-start) because an untrained embedder's "hardest" negatives are
+    # mostly noise, not genuine near-misses. Mirrors that script's arm 2.
+    rng = random.Random(cfg.seed)
+    bootstrap_pools = [
+        [gold] + rng.sample([i for i in bank.ids if i != gold], cfg.pool_size - 1)
+        for gold in train_golds
+    ]
+    train_retriever(
+        retriever,
+        train_queries,
+        [bank.texts_of(p) for p in bootstrap_pools],
+        RetrieverTrainConfig(
+            epochs=cfg.epochs,
+            batch_size=cfg.batch_size,
+            gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+            lr=cfg.lr,
+            temperature=cfg.temperature,
+            weight_decay=cfg.weight_decay,
+            seed=cfg.seed,
+        ),
+    )
+    metrics["bootstrap"] = _evaluate(retriever, eval_df, bank, cfg)
+    print(f"bootstrap: {metrics['bootstrap']}")
+
     train_rankings = retriever.retrieve(
         train_queries, bank, batch_size=cfg.eval_batch_size
     )
