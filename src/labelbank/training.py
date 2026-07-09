@@ -30,7 +30,6 @@ class RetrieverTrainConfig:
     max_grad_norm: float = 10.0
     seed: int = 42
     shuffle: bool = True
-    log_every: int = 10
 
 
 def train_retriever(
