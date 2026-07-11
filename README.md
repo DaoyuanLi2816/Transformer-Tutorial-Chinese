@@ -86,7 +86,7 @@ reranker.train(rows, output_dir="out/reranker", lora={"r": 16})
 order = reranker.rerank(query_text, candidate_texts)                     # letter-logit reorder
 ```
 
-Or run the whole loop — zero-shot eval → rank the bank → mine gold-first pools → retrain → re-evaluate, for `mining_rounds` rounds — from one YAML:
+Or run the whole loop — zero-shot eval → bootstrap round on random negatives → rank the bank → mine gold-first pools → retrain → re-evaluate, for `mining_rounds` rounds — from one YAML:
 
 ```bash
 python -m labelbank.run --cfg examples/configs/quickstart.yaml             # 0.5B, one consumer GPU
@@ -106,7 +106,7 @@ The library's central claim, measured end to end through its public API on a pub
 | **+ self-mined, round 1** | **0.838** | **76.2%** | 89.6% | 93.3% | 97.5% |
 | + self-mined, round 2 | 0.839 | 75.7% | **90.5%** | **95.0%** | **97.9%** |
 
-Mining is worth **+5.0 MAP and +8.6 points of R@1** over random negatives at the same budget — and the gain concentrates exactly where fine-grained banks hurt: top-1, where sibling labels collide (R@10 is saturated for both). Round 2 plateaus on this small bank; the competition iterated rounds over a 2,587-entry bank (next section).
+Mining is worth **+5.0 points of MAP@25 and +8.6 points of R@1** over random negatives at the same budget — and the gain concentrates exactly where fine-grained banks hurt: top-1, where sibling labels collide (R@10 is saturated for both). Round 2 plateaus on this small bank; the competition iterated rounds over a 2,587-entry bank (next section).
 
 One honest caveat the ablation makes measurable: **hard negatives are only as good as the model that mines them.** Mining round 1 from the *zero-shot* model's rankings instead of the bootstrap model's collapses to MAP **0.430** — far below plain random negatives. That is why the pipeline (and the competition protocol preserved in [`competition/`](competition/README.md)) trains a bootstrap round first and mines from it. Reproduce both:
 
